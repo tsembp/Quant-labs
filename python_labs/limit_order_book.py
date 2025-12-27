@@ -1,4 +1,5 @@
 from sortedcontainers import SortedList
+from collections import defaultdict
 
 class Order:
     def __init__(self, order_id, side, price, qty, timestamp):
@@ -215,6 +216,67 @@ class OrderBook:
             return None
         return self.asks[0]
     
+    def levels(self, side: str, depth: int = 10):
+        """
+        L2 aggregated depth for one side
+        Returns: list of (price, total_qty) for top 'depth' levels
+        """
+        if side not in ['buy', 'sell']:
+            raise ValueError("side must be 'buy' or 'sell'")
+        
+        book = self.bids if side == 'buy' else self.asks
+
+        agg = defaultdict(float)
+        for o in book:
+            agg[o.price] += o.qty
+
+        prices = sorted(agg.keys(), reverse=(side=='buy'))  # sort desc for bids, asc for asks
+        out = [(price, agg[price]) for price in prices[:depth]]
+        return out
+
+    def sweep_vwap(self, side: str, qty: float):
+        """
+        Compute the VWAP to execute qty immediately against current book.
+        side='buy' -> consumes asks (best ask upward)
+        side='sell' -> consumes bids (best bid downward)
+        """
+        if side not in ['buy', 'sell']:
+            raise ValueError("side must be 'buy' or 'sell'")
+        if qty <= 0:
+            raise ValueError("qty must be > 0")
+
+        remaining = qty
+        filled = 0.0
+        notional = 0.0
+        breakdown = []  # per level fills
+
+        if side == 'buy':
+            lvls = self.levels('sell', depth=10**9)
+        else:
+            lvls = self.levels('buy', depth=10**9)
+
+        for price, level_qty in lvls:
+            if remaining <= 0:
+                break
+
+            take = min(remaining, level_qty)
+            notional += take * price
+            filled += take
+            remaining -= take
+            breakdown.append({'price': price, 'qty': take})
+
+        vwap = (notional / filled) if filled > 0 else None
+
+        return {
+            'side': side,
+            'requested_qty': qty,
+            'filled_qty': filled,
+            'remaining_qty': remaining,
+            'notional': notional,
+            'vwap': vwap,
+            'breakdown': breakdown
+        }
+
     def print_book(self):
         print("Order Book:")
         print("Bids:")
@@ -226,18 +288,4 @@ class OrderBook:
         print("")
 
 if __name__ == "__main__":
-    ob = OrderBook()
-    id1 = ob.add_order('buy', price=100, qty=10)
-    id2 = ob.add_order('buy', price=100, qty=5)
-    ob.print_book()
-
-    # Reduce first order from 10 -> 6
-    ob.modify_order_qty(id1, 6)
-    ob.print_book()
-
-    # Try to increase (should fail)
-    ob.modify_order_qty(id1, 20)
-
-    # Reduce to zero (should cancel)
-    ob.modify_order_qty(id2, 0)
-    ob.print_book()
+    pass
