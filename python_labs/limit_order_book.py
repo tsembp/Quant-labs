@@ -277,6 +277,26 @@ class OrderBook:
             'breakdown': breakdown
         }
 
+    def vwma_last_n_trades(self, n: int):
+        """
+        VWMA of last n trades.
+        VWMA = Σ(price * qty) / Σ(qty)
+        """
+        if n <= 0:
+            raise ValueError("n must be > 0")
+        if not self.trades:
+            return None
+        
+        recent_trades = self.trades[-n:]
+        total_qty = sum(t['qty'] for t in recent_trades)
+        total_pv = sum(t['price'] * t['qty'] for t in recent_trades)
+
+        if total_qty == 0:
+            return None
+        
+        vwma = total_pv / total_qty
+        return vwma
+
     def print_book(self):
         print("Order Book:")
         print("Bids:")
@@ -288,4 +308,15 @@ class OrderBook:
         print("")
 
 if __name__ == "__main__":
-    pass
+    ob = OrderBook()
+
+    # Add liquidity
+    ob.add_order('sell', 101, 5)
+    ob.add_order('sell', 102, 5)
+
+    # Trade happens (market buy sweeps asks)
+    ob.add_market_order('buy', 7)
+
+    print("Trades:", ob.trades)
+    print("VWMA last 1:", ob.vwma_last_n_trades(1))
+    print("VWMA last 2:", ob.vwma_last_n_trades(2))
