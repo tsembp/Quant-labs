@@ -172,15 +172,37 @@ class OrderBook:
             'remaining_qty' : remaining_qty
         }
         
+    def modify_order_qty(self, order_id, new_qty):
+        if order_id not in self.order_map:
+            print(f"modify_order_qty: Order ID {order_id} not found")
+            return False
+        
+        order = self.order_map[order_id]
+        if new_qty <= 0:
+            print(f"modify_order_qty: New quantity must be positive")
+            return False
+        
+        if new_qty > order.qty:
+            print(f"modify_order_qty: cannot increase qty from {order.qty} to {new_qty} for order {order_id}")
+            return False
+        
+        order.qty = new_qty
+        print(f"modify_order_qty: Order {order_id} qty modified to {new_qty}")
+        return True
+
     def cancel_order(self, order_id):
         if order_id in self.order_map:
             order = self.order_map[order_id]
             if order.side == 'buy':
+                print(f"cancel_order: Cancelling buy order {order_id}")
                 self.bids.remove(order)
             elif order.side == 'sell':
+                print(f"cancel_order: Cancelling sell order {order_id}")
                 self.asks.remove(order)
             del self.order_map[order_id]
             return True
+        
+        print(f"cancel_order: Order ID {order_id} not found")
         return False
     
     def best_bid(self): # max
@@ -205,23 +227,17 @@ class OrderBook:
 
 if __name__ == "__main__":
     ob = OrderBook()
-
-    # Add some resting liquidity
-    ob.add_order('sell', price=101, qty=5)
-    ob.add_order('sell', price=102, qty=5)
-    ob.add_order('buy',  price=99,  qty=5)
-    ob.add_order('buy',  price=98,  qty=5)
-
+    id1 = ob.add_order('buy', price=100, qty=10)
+    id2 = ob.add_order('buy', price=100, qty=5)
     ob.print_book()
 
-    # Hit the book with a market buy
-    result = ob.add_market_order('buy', qty=7)
-    print(result)
-
+    # Reduce first order from 10 -> 6
+    ob.modify_order_qty(id1, 6)
     ob.print_book()
 
-    # Hit with a market sell
-    result = ob.add_market_order('sell', qty=3)
-    print(result)
+    # Try to increase (should fail)
+    ob.modify_order_qty(id1, 20)
 
+    # Reduce to zero (should cancel)
+    ob.modify_order_qty(id2, 0)
     ob.print_book()
