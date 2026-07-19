@@ -32,4 +32,15 @@ Multi-venue order book aggregation built on top of single-venue books.
 - Per-venue fill attribution
 - Consolidated L2 depth across all venues
 
-These components model realistic multi-exchange market data and routing behavior used in electronic trading systems. :contentReference[oaicite:0]{index=0}
+These components model realistic multi-exchange market data and routing behavior used in electronic trading systems.
+
+## Running the tests
+
+Install the dependency and run the reference implementation's test suite:
+
+```bash
+python -m pip install -r python_labs/requirements.txt
+python -m unittest discover -s python_labs/tests -v
+```
+
+`OrderBook.trades` records executions, while `OrderBook.events` provides a structured audit trail for received, filled, resting, modified, cancelled, and market-order events. Core order-book methods do not print as a side effect.

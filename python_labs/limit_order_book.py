@@ -19,14 +19,51 @@ class OrderBook:
         self.order_map = {}
         self.timestamp = 0
         self.trades = []
-        
-    def add_order(self, side, price, qty=1):
+        # Append-only audit trail for callers that need to observe book activity
+        # without relying on stdout.
+        self.events = []
+
+    @staticmethod
+    def _validate_side(side):
         if side not in ['buy', 'sell']:
             raise ValueError("side must be 'buy' or 'sell'")
+
+    @staticmethod
+    def _validate_qty(qty):
+        if qty <= 0:
+            raise ValueError("qty must be > 0")
+
+    @staticmethod
+    def _validate_price(price):
+        if price <= 0:
+            raise ValueError("price must be > 0")
+
+    def _record_trade(self, buyer, seller, price, qty, market_order=False):
+        trade = {
+            'buyer': buyer,
+            'seller': seller,
+            'price': price,
+            'qty': qty,
+        }
+        self.trades.append(trade)
+        self.events.append({
+            'type': 'trade',
+            'market_order': market_order,
+            **trade,
+        })
+
+    def add_order(self, side, price, qty=1):
+        self._validate_side(side)
+        self._validate_qty(qty)
+        self._validate_price(price)
         
         self.timestamp += 1
         order_id = f"o{self.timestamp}"
         incoming = Order(order_id, side, price, qty, self.timestamp)
+        self.events.append({
+            'type': 'limit_order_received', 'order_id': order_id,
+            'side': side, 'price': price, 'qty': qty,
+        })
 
         if side == 'buy':
             # match against asks where:
@@ -35,20 +72,12 @@ class OrderBook:
             while incoming.qty > 0:
                 best_ask = self.best_ask()
                 if best_ask is None or best_ask.price > incoming.price:
-                    print('No matching asks')
                     break
                 
                 trade_qty = min(incoming.qty, best_ask.qty)
                 trade_price = best_ask.price
 
-                self.trades.append({
-                    'buyer' : incoming.order_id,
-                    'seller' : best_ask.order_id,
-                    'price' : trade_price,
-                    'qty' : trade_qty
-                })
-
-                print(f"Trade executed: {trade_qty} @ {trade_price} between {incoming.order_id} and {best_ask.order_id}")
+                self._record_trade(incoming.order_id, best_ask.order_id, trade_price, trade_qty)
 
                 # update qtys
                 incoming.qty -= trade_qty
@@ -69,20 +98,12 @@ class OrderBook:
             while incoming.qty > 0:
                 best_bid = self.best_bid()
                 if best_bid is None or best_bid.price < incoming.price:
-                    print('No matching bids')
                     break
                 
                 trade_qty = min(incoming.qty, best_bid.qty)
                 trade_price = best_bid.price
 
-                self.trades.append({
-                    'buyer' : best_bid.order_id,
-                    'seller' : incoming.order_id,
-                    'price' : trade_price,
-                    'qty' : trade_qty
-                })
-
-                print(f"Trade executed: {trade_qty} @ {trade_price} between {best_bid.order_id} and {incoming.order_id}")
+                self._record_trade(best_bid.order_id, incoming.order_id, trade_price, trade_qty)
 
                 # update qtys
                 incoming.qty -= trade_qty
@@ -96,6 +117,11 @@ class OrderBook:
                 self.asks.add(incoming)
                 self.order_map[incoming.order_id] = incoming
 
+        self.events.append({
+            'type': 'order_resting' if incoming.qty > 0 else 'order_filled',
+            'order_id': order_id, 'remaining_qty': incoming.qty,
+        })
+
         return incoming.order_id
     
     def add_market_order(self, side, qty=1):
@@ -104,32 +130,28 @@ class OrderBook:
         - Never rests in the book.
         - Trades against best prices until qty is exhausted or opposite book is empty.
         """
-        if side not in ['buy', 'sell']:
-            raise ValueError("side must be 'buy' or 'sell'")
+        self._validate_side(side)
+        self._validate_qty(qty)
         
         self.timestamp += 1
         order_id = f"o{self.timestamp}"
         remaining_qty = qty
         filled = 0
+        self.events.append({
+            'type': 'market_order_received', 'order_id': order_id,
+            'side': side, 'qty': qty,
+        })
 
         if side == 'buy':
             while remaining_qty > 0: # repeatedly hits best ask
                 best_ask = self.best_ask()
                 if best_ask is None:
-                    print('No matching asks for market buy order')
                     break
                 
                 trade_qty = min(remaining_qty, best_ask.qty)
                 trade_price = best_ask.price
 
-                self.trades.append({
-                    'buyer' : order_id,
-                    'seller' : best_ask.order_id,
-                    'price' : trade_price,
-                    'qty' : trade_qty
-                })
-
-                print(f"Market Buy Trade executed: {trade_qty} @ {trade_price} between {order_id} and {best_ask.order_id}")
+                self._record_trade(order_id, best_ask.order_id, trade_price, trade_qty, market_order=True)
 
                 remaining_qty -= trade_qty
                 filled += trade_qty
@@ -142,20 +164,12 @@ class OrderBook:
             while remaining_qty > 0: # repeatedly hits best bid
                 best_bid = self.best_bid()
                 if best_bid is None:
-                    print('No matching bids for market sell order')
                     break
                 
                 trade_qty = min(remaining_qty, best_bid.qty)
                 trade_price = best_bid.price
 
-                self.trades.append({
-                    'buyer' : best_bid.order_id,
-                    'seller' : order_id,
-                    'price' : trade_price,
-                    'qty' : trade_qty
-                })
-
-                print(f"Market Sell Trade executed: {trade_qty} @ {trade_price} between {best_bid.order_id} and {order_id}")
+                self._record_trade(best_bid.order_id, order_id, trade_price, trade_qty, market_order=True)
 
                 remaining_qty -= trade_qty
                 filled += trade_qty
@@ -165,45 +179,44 @@ class OrderBook:
                     self.bids.remove(best_bid)
                     del self.order_map[best_bid.order_id]
 
-        return {
+        result = {
             'order_id' : order_id,
             'side' : side,
             'requested_qty' : qty,
             'filled_qty' : filled,
             'remaining_qty' : remaining_qty
         }
+        self.events.append({'type': 'market_order_completed', **result})
+        return result
         
     def modify_order_qty(self, order_id, new_qty):
         if order_id not in self.order_map:
-            print(f"modify_order_qty: Order ID {order_id} not found")
             return False
         
         order = self.order_map[order_id]
         if new_qty <= 0:
-            print(f"modify_order_qty: New quantity must be positive")
-            return False
+            raise ValueError("new_qty must be > 0")
         
         if new_qty > order.qty:
-            print(f"modify_order_qty: cannot increase qty from {order.qty} to {new_qty} for order {order_id}")
             return False
         
         order.qty = new_qty
-        print(f"modify_order_qty: Order {order_id} qty modified to {new_qty}")
+        self.events.append({
+            'type': 'order_quantity_modified', 'order_id': order_id,
+            'new_qty': new_qty,
+        })
         return True
 
     def cancel_order(self, order_id):
         if order_id in self.order_map:
             order = self.order_map[order_id]
             if order.side == 'buy':
-                print(f"cancel_order: Cancelling buy order {order_id}")
                 self.bids.remove(order)
             elif order.side == 'sell':
-                print(f"cancel_order: Cancelling sell order {order_id}")
                 self.asks.remove(order)
             del self.order_map[order_id]
+            self.events.append({'type': 'order_cancelled', 'order_id': order_id})
             return True
-        
-        print(f"cancel_order: Order ID {order_id} not found")
         return False
     
     def best_bid(self): # max
