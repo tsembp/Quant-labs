@@ -1,0 +1,13 @@
+# Python bytecode and local environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# CMake build products
+build/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+Testing/
+*.cmake.user

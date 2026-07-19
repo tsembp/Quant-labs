@@ -1,46 +1,41 @@
-## Python-based Labs (`/python_labs`)
+# Quant Labs
 
-### `limit_order_book.py`
+An educational repository for building the core components of electronic
+trading systems. It starts with a working Python reference implementation and
+rebuilds the same ideas in C++ to learn the data structures, testing, and
+performance trade-offs involved in an order book.
 
-Single-venue limit order book with price–time priority.
+This is a learning project, not production trading software or financial
+advice.
 
-**Features implemented:**
-- Limit orders (buy/sell) with FIFO matching at each price
-- Market orders that sweep the book and never rest
-- Partial fills and automatic removal of filled orders
-- Order cancellation by ID
-- Order quantity modification (decrease-only)
-- Best bid and best ask access
-- Trade tape recording executed trades
-- L2 depth aggregation (price levels)
-- Sweep VWAP calculation from current book
-- VWMA (volume-weighted moving average) over last *N* trades
-- Deterministic ordering using timestamps
+## What's here
 
----
+| Lab | Status | Focus |
+| --- | --- | --- |
+| [Python](python_labs/README.md) | Reference implementation | Matching, order lifecycle, market data, and multi-venue routing |
+| [C++](cpp_labs/README.md) | In progress | Rebuilding the order book incrementally with CMake and tests |
 
-### `multi_venue_book.py`
+## Quick start
 
-Multi-venue order book aggregation built on top of single-venue books.
-
-**Features implemented:**
-- Multiple exchange support (e.g. Binance, Crypto.com)
-- Per-venue best bid / best ask
-- Per-venue liquidity statistics
-- NBBO (National Best Bid and Offer) across venues
-- Smart order routing with cross-venue sweep VWAP
-- Per-venue fill attribution
-- Consolidated L2 depth across all venues
-
-These components model realistic multi-exchange market data and routing behavior used in electronic trading systems.
-
-## Running the tests
-
-Install the dependency and run the reference implementation's test suite:
+Run the Python reference tests:
 
 ```bash
 python -m pip install -r python_labs/requirements.txt
 python -m unittest discover -s python_labs/tests -v
 ```
 
-`OrderBook.trades` records executions, while `OrderBook.events` provides a structured audit trail for received, filled, resting, modified, cancelled, and market-order events. Core order-book methods do not print as a side effect.
+Build and test the C++ lab:
+
+```bash
+cmake -S cpp_labs -B /tmp/quant-labs-cpp-build
+cmake --build /tmp/quant-labs-cpp-build
+ctest --test-dir /tmp/quant-labs-cpp-build --output-on-failure
+```
+
+
+## Repository layout
+
+```text
+python_labs/  Working Python reference implementation and tests
+cpp_labs/     Incremental C++ implementation, CMake configuration, and tests
+```
